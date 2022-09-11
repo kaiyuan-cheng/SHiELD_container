@@ -18,7 +18,8 @@ RUN apt update && \
     apt-get install -y \
     gfortran \
     openssh-client \
-    libcurl4-gnutls-dev
+    libcurl4-gnutls-dev && \
+    rm -rf /var/lib/apt
 
 # Create an intermediate image for model compilation  
 FROM base-image as env-image
@@ -32,15 +33,13 @@ ARG NETCDFF_VERSION
 ARG GFDL_atmos_cubed_sphere_VERSION
 ARG SHiELD_physics_VERSION
 
-RUN apt-get install -y \
+RUN apt update && \
+    apt-get install -y \
     build-essential \
     wget \
     git
 
 # Install OPENMPI
-#ENV FFFLAGS="-fallow-argument-mismatch -fallow-invalid-boz"
-#ENV FFLAGS="-fallow-argument-mismatch"
-
 RUN cd /tmp
 RUN wget https://download.open-mpi.org/release/open-mpi/v4.1/openmpi-4.1.0.tar.gz \
  && tar xvf openmpi-4.1.0.tar.gz \
@@ -122,12 +121,13 @@ RUN cd /SHiELD_build/site \
   export CXX=mpicxx\n\
   export LD=mpif90\n\
   export TEMPLATE=site/gnu.mk\n\
+  export LAUNCHER=mpirun\n\
   ' > ./environment.gnu.sh
 
 # Revise gnu.mk for better performance
 RUN cd /SHiELD_build/site \
  && sed -i 's/-fno-range-check -fbacktrace/-fno-range-check -fallow-argument-mismatch -fallow-invalid-boz -fbacktrace/g' ./gnu.mk \
- && sed -i 's/FFLAGS_OPT = -O2 -fno-range-check/FFLAGS_OPT = -O3 -funroll-all-loops -fprefetch-loop-arrays -fno-protect-parens -fno-rounding-math -fno-trapping-math -fno-signaling-nans/g' ./gnu.mk \
+ && sed -i 's/FFLAGS_OPT = -O2 -fno-range-check/FFLAGS_OPT = -O3 -funroll-all-loops -fno-protect-parens -fno-rounding-math -fno-trapping-math -fno-signaling-nans/g' ./gnu.mk \
  && sed -i 's/TRANSCENDENTALS :=/TRANSCENDENTALS := -ffinite-math-only/g' ./gnu.mk \
  && sed -i 's/CFLAGS_OPT = -O2/CFLAGS_OPT = -O3 -funroll-all-loops -fprefetch-loop-arrays -fno-protect-parens -fno-rounding-math -fno-trapping-math -fno-signaling-nans/g' ./gnu.mk
 
@@ -137,42 +137,36 @@ RUN cd /SHiELD_build/Build/mk_scripts \
 
 # Compile SHiELD
 RUN cd /SHiELD_build/Build \
- && ./COMPILE shield gnu 32bit \
- && ./COMPILE solo gnu 32bit
+ && ./COMPILE gnu 64bit \
+ && ./COMPILE gnu 32bit
 
 RUN rm -rf ${OPENMPI_DIR}/share \
  && rm -rf ${OPENMPI_DIR}/include
 
 # Rename executables
 RUN cd /SHiELD_build/Build/bin \
- && mv SHiELD_nh.prod.32bit.gnu.x SHiELD_nh.prod.32bit.x \
- && mv SOLO_nh.prod.32bit.gnu.x SOLO_nh.prod.32bit.x
+ && mv SHiELD_nh.prod.64bit.gnu.x SHiELD_nh.prod.64bit.x \
+ && mv SHiELD_nh.prod.32bit.gnu.x SHiELD_nh.prod.32bit.x
 
 # Create a clean image
 FROM base-image as shield
 
-ARG OPENMPI_DIR
-ARG HDF5_DIR
-ARG NETCDF_DIR
+ARG OPENMPI_DIR HDF5_DIR NETCDF_DIR
+
 COPY --from=env-image ${OPENMPI_DIR} ${OPENMPI_DIR}
 COPY --from=env-image ${HDF5_DIR}/lib ${HDF5_DIR}/lib
 COPY --from=env-image ${NETCDF_DIR}/lib ${NETCDF_DIR}/lib
 COPY --from=env-image /SHiELD_build/Build/bin /SHiELD_build/Build/bin
 
 # Update environment variables
-ENV PATH /SHiELD_build/Build/bin:$PATH
+ENV PATH=/SHiELD_build/Build/bin:${OPENMPI_DIR}/bin:$PATH \ 
+    LD_LIBRARY_PATH=${OPENMPI_DIR}/lib:${HDF5_DIR}/lib:${NETCDF_DIR}/lib:$LD_LIBRARY_PATH\
+	USER=shield
 
-ENV OPENMPI_DIR ${OPENMPI_DIR}
-ENV PATH ${OPENMPI_DIR}/bin:$PATH
-ENV LD_LIBRARY_PATH ${OPENMPI_DIR}/lib:${LD_LIBRARY_PATH}
-
-ENV HDF5 ${HDF5_DIR}
-ENV LD_LIBRARY_PATH ${HDF5}/lib:${LD_LIBRARY_PATH}
-
-ENV NETCDF ${NETCDF_DIR}
-ENV LD_LIBRARY_PATH ${NETCDF}/lib:${LD_LIBRARY_PATH}
-
-ENV OMPI_ALLOW_RUN_AS_ROOT 1
-ENV OMPI_ALLOW_RUN_AS_ROOT_CONFIRM 1
+RUN adduser shield
 
 WORKDIR /rundir
+
+RUN chown shield /rundir
+
+USER shield
