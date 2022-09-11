@@ -4,7 +4,7 @@ Containerized SHiELD (System for High-resolution prediction on Earth-to-Local Do
 Visit [SHiELD in a box](https://shield.gfdl.noaa.gov/shield-in-a-box/) for more information.
 
 ## Prerequisite
-`Git and Docker`
+[Git](https://git-scm.com/) and [Docker](https://www.docker.com/)
 
 ## Get the prebuild Docker image
 `docker pull gfdlfv3/shield`
