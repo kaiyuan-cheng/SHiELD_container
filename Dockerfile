@@ -87,7 +87,7 @@ ENV LD_LIBRARY_PATH ${NETCDF}/lib:${LD_LIBRARY_PATH}
 ENV PATH ${NETCDF}/bin:$PATH
 
 # Preconfiguration for SHiELD
-RUN apt-get install -y tcsh procps
+RUN apt-get install -y tcsh procps cmake
 ENV CPATH ${NETCDF}/include:${CPATH}
 ENV NETCDF_DIR ${NETCDF}
 
